@@ -1,0 +1,85 @@
+name: Preview Changelog
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main  # Adjust this if your default branch has a different name
+
+jobs:
+  preview-changelog:
+    name: Generate Changelog Preview
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write  # Needed to comment on PRs
+      contents: read        # Needed to read repository content
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # Fetch all history for accurate changelog
+      
+      - name: Generate changelog preview
+        uses: orhun/git-cliff-action@v4
+        id: git-cliff
+        with:
+          config: cliff.toml
+          args: --verbose --output /tmp/CHANGELOG_PREVIEW.md
+        env:
+          GITHUB_REPO: ${{ github.repository }}
+      
+      - name: Read changelog preview
+        id: changelog
+        run: |
+          CHANGELOG_CONTENT=$(cat /tmp/CHANGELOG_PREVIEW.md)
+          # Convert the changelog content to a format that can be used in GitHub Actions outputs
+          CHANGELOG_CONTENT="${CHANGELOG_CONTENT//'%'/'%25'}"
+          CHANGELOG_CONTENT="${CHANGELOG_CONTENT//$'\n'/'%0A'}"
+          CHANGELOG_CONTENT="${CHANGELOG_CONTENT//$'\r'/'%0D'}"
+          echo "::set-output name=content::$CHANGELOG_CONTENT"
+      
+      - name: Post changelog preview as comment
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const changelog = fs.readFileSync('/tmp/CHANGELOG_PREVIEW.md', 'utf8');
+            
+            // Check if there's already a changelog preview comment from this workflow
+            const { data: comments } = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+            
+            const botComment = comments.find(comment => {
+              return comment.user.login === 'github-actions[bot]' && 
+                     comment.body.includes('## Changelog Preview');
+            });
+            
+            const commentBody = `## Changelog Preview
+            
+            Here's how the changelog will look if this PR is merged:
+            
+            \`\`\`markdown
+            ${changelog}
+            \`\`\`
+            
+            *This is an automated preview. No changes have been committed.*`;
+            
+            // Update existing comment or create a new one
+            if (botComment) {
+              github.rest.issues.updateComment({
+                comment_id: botComment.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: commentBody
+              });
+            } else {
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: commentBody
+              });
+            }
