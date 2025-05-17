@@ -26,7 +26,7 @@ body = """
     {% for commit in commits
     | filter(attribute="scope")
     | sort(attribute="scope") %}
-        - **({{commit.scope}})**{% if commit.breaking %} [**breaking**]{% endif %} \
+        - **{{commit.scope}}:**{% if commit.breaking %} [**breaking**]{% endif %} \
             {{ commit.message }} - ([{{ commit.id | truncate(length=7, end="") }}]($REPO/commit/{{ commit.id }})) - {{ commit.author.name }}
     {%- endfor -%}
     {% raw %}\n{% endraw %}\
